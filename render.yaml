@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: pinecone-compass
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      # Secrets — set these in the Render dashboard, not in git.
+      - key: PINECONE_API
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      # Non-secret config
+      - key: PINECONE_CLOUD
+        value: aws
+      - key: PINECONE_REGION
+        value: us-east-1
+      - key: APP_USER
+        value: admin

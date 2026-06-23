@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pinecone Compass</title>
+<style>
+  :root {
+    --green: #00684a;
+    --green-light: #00ed64;
+    --bg: #f5f6f7;
+    --sidebar: #ffffff;
+    --border: #e0e2e5;
+    --text: #1c2d38;
+    --muted: #5c6c75;
+    --field: #c0392b;     /* field name red, like Compass */
+    --string: #198754;    /* string green */
+    --number: #0a6cff;    /* number blue */
+    --keyword: #8250df;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text); background: var(--bg);
+    font-size: 13px;
+  }
+  #app { display: flex; height: 100vh; }
+
+  /* Sidebar */
+  #sidebar {
+    width: 300px; min-width: 220px; background: var(--sidebar);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .brand {
+    padding: 14px 16px; font-weight: 700; font-size: 18px;
+    display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border);
+  }
+  .brand .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--green-light); }
+  .sidebar-head {
+    padding: 10px 16px 4px; font-size: 11px; font-weight: 700;
+    letter-spacing: .5px; color: var(--muted); text-transform: uppercase;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #refresh-btn {
+    border: none; background: none; cursor: pointer; color: var(--muted); font-size: 14px;
+  }
+  #index-list { overflow-y: auto; flex: 1; padding-bottom: 20px; }
+  .index-item { user-select: none; }
+  .index-row {
+    display: flex; align-items: center; gap: 6px; padding: 7px 12px;
+    cursor: pointer; border-left: 3px solid transparent; white-space: nowrap;
+  }
+  .index-row:hover { background: #f0f7f4; }
+  .index-row .caret { width: 12px; color: var(--muted); transition: transform .12s; flex: none; }
+  .index-row .icon { color: var(--green); flex: none; }
+  .index-row .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  .index-row .meta { color: var(--muted); font-size: 11px; margin-left: auto; flex: none; }
+  .ns-row {
+    display: flex; align-items: center; gap: 6px; padding: 6px 12px 6px 34px;
+    cursor: pointer; border-left: 3px solid transparent; color: var(--text);
+  }
+  .ns-row:hover { background: #f0f7f4; }
+  .ns-row.active { background: #d8f3e9; border-left-color: var(--green); font-weight: 600; }
+  .ns-row .count { color: var(--muted); margin-left: auto; font-size: 11px; }
+  .ns-icon { color: var(--muted); }
+
+  /* Main */
+  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .crumbs {
+    padding: 12px 20px; border-bottom: 1px solid var(--border); background: #fff;
+    display: flex; align-items: center; gap: 8px; font-weight: 600;
+  }
+  .crumbs .sep { color: var(--muted); font-weight: 400; }
+  .crumbs .count-badge {
+    margin-left: 10px; background: #eef0f2; color: var(--muted);
+    border-radius: 10px; padding: 2px 10px; font-size: 11px; font-weight: 600;
+  }
+
+  .filterbar {
+    padding: 12px 20px; background: #fff; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .filterbar label { font-weight: 700; color: var(--muted); }
+  .filter-input {
+    flex: 1; font-family: "SF Mono", Menlo, Consolas, monospace;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+    font-size: 13px; background: #fbfbfc;
+  }
+  .filter-input.invalid { border-color: var(--field); background: #fff5f4; }
+  .btn {
+    border: 1px solid var(--border); background: #fff; border-radius: 6px;
+    padding: 8px 14px; cursor: pointer; font-weight: 600; font-size: 13px;
+  }
+  .btn:hover { background: #f4f5f6; }
+  .btn.primary { background: var(--green); color: #fff; border-color: var(--green); }
+  .btn.primary:hover { background: #00563d; }
+  .btn.danger { color: var(--field); border-color: #e7b7b1; }
+  .btn.danger:hover { background: #fff0ee; }
+  .btn.danger-solid { background: var(--field); color: #fff; border-color: var(--field); }
+  .btn.danger-solid:hover { background: #a93226; }
+
+  .options {
+    padding: 10px 20px 14px; background: #fff; border-bottom: 1px solid var(--border);
+  }
+  .opt-row { display: flex; align-items: center; gap: 14px; padding: 5px 0; }
+  .opt-row label {
+    width: 80px; font-weight: 700; flex: none;
+  }
+  .opt-input {
+    flex: 1; max-width: 520px; font-family: "SF Mono", Menlo, Consolas, monospace;
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
+    font-size: 13px; background: #fbfbfc;
+  }
+  .opt-input.invalid { border-color: var(--field); background: #fff5f4; }
+
+  .toolbar {
+    padding: 8px 20px; background: #fff; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .toolbar .spacer { flex: 1; }
+  .toolbar select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; }
+  .pageinfo { color: var(--muted); }
+  .icon-btn {
+    border: 1px solid var(--border); background: #fff; border-radius: 6px;
+    width: 30px; height: 30px; cursor: pointer; font-size: 14px;
+  }
+  .icon-btn:disabled { opacity: .4; cursor: default; }
+
+  /* Documents */
+  #docs { flex: 1; overflow-y: auto; padding: 16px 20px; }
+  .doc {
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin-bottom: 12px;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px;
+    line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+  }
+  .k-field { color: var(--field); }
+  .k-string { color: var(--string); }
+  .k-number { color: var(--number); }
+  .k-keyword { color: var(--keyword); }
+  .k-key { color: var(--muted); }
+  .doc .row-id { color: var(--muted); font-weight: 700; }
+  .doc { position: relative; }
+  .doc-actions {
+    position: absolute; top: 10px; right: 12px; display: flex; gap: 6px;
+  }
+  .doc-actions button {
+    border: 1px solid var(--border); background: #fff; border-radius: 6px;
+    padding: 3px 9px; cursor: pointer; font-size: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .doc-copy { color: var(--muted); }
+  .doc-copy:hover { background: #f0f7f4; color: var(--green); border-color: #b6ddcc; }
+  .doc-del { color: var(--field); border-color: #e7b7b1 !important; }
+  .doc-del:hover { background: var(--field); color: #fff; }
+
+  /* JSON tree */
+  .jtree { padding-right: 150px; }
+  .caret-j { cursor: pointer; color: var(--muted); user-select: none; }
+  .caret-j:hover { color: var(--text); }
+  .jchildren { padding-left: 18px; }
+  .jline { white-space: pre-wrap; }
+  .jsum { color: var(--muted); font-style: italic; }
+  .showmore { color: var(--number); cursor: pointer; font-style: italic; }
+  .showmore:hover { text-decoration: underline; }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(28,45,56,.45);
+    display: flex; align-items: center; justify-content: center; z-index: 100;
+  }
+  .modal {
+    background: #fff; border-radius: 10px; width: 560px; max-width: 92vw;
+    box-shadow: 0 12px 40px rgba(0,0,0,.25); overflow: hidden;
+  }
+  .modal-title {
+    padding: 16px 20px; font-size: 16px; font-weight: 700;
+    border-bottom: 1px solid var(--border); color: var(--field);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .modal-body { padding: 18px 20px; line-height: 1.6; }
+  .modal-body .warn {
+    background: #fff5f4; border: 1px solid #e7b7b1; border-radius: 6px;
+    padding: 10px 12px; margin: 12px 0; color: #7a271a;
+  }
+  .modal-body code, .modal-body pre {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px;
+  }
+  .modal-body pre {
+    background: #f5f6f7; border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; margin: 8px 0 0; white-space: pre-wrap; word-break: break-word;
+  }
+  .modal-body .count { font-size: 22px; font-weight: 800; color: var(--field); }
+  .modal-actions {
+    padding: 14px 20px; border-top: 1px solid var(--border);
+    display: flex; justify-content: flex-end; gap: 10px;
+  }
+
+  .empty, .loading, .error {
+    padding: 40px; text-align: center; color: var(--muted);
+  }
+  .error { color: var(--field); }
+  .hint { padding: 60px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand"><span class="dot"></span> Pinecone Compass</div>
+    <div class="sidebar-head">
+      <span>Indexes</span>
+      <button id="refresh-btn" title="Refresh">⟳</button>
+    </div>
+    <div id="index-list"><div class="loading">Loading…</div></div>
+  </aside>
+
+  <main id="main">
+    <div id="welcome" class="hint">
+      Select an index from the left to browse its vectors.
+    </div>
+
+    <div id="browser" style="display:none; flex:1; flex-direction:column; overflow:hidden;">
+      <div class="crumbs">
+        <span id="cr-index">—</span>
+        <span class="sep">›</span>
+        <span id="cr-ns">—</span>
+        <span id="cr-count" class="count-badge">0</span>
+      </div>
+
+      <div class="filterbar">
+        <label>Filter</label>
+        <input id="filter" class="filter-input" spellcheck="false" value="{}" placeholder='{ "tenantId": "322" }' />
+        <button id="reset-btn" class="btn">Reset</button>
+        <button id="find-btn" class="btn primary">Find</button>
+        <button id="options-btn" class="btn">Options ▸</button>
+        <button id="export-btn" class="btn" title="Export all documents matching the filter as JSON">⬇ Export</button>
+        <button id="delete-all-btn" class="btn danger" title="Delete every document matching the filter">🗑 Delete All</button>
+      </div>
+
+      <div id="options" class="options" style="display:none;">
+        <div class="opt-row">
+          <label>Project</label>
+          <input id="project" class="opt-input" spellcheck="false" placeholder="{ field: 0 }" />
+        </div>
+        <div class="opt-row">
+          <label>Sort</label>
+          <input id="sort" class="opt-input" spellcheck="false" placeholder="{ chunkIndex: -1 }" />
+        </div>
+        <div class="opt-row">
+          <label>Limit</label>
+          <input id="limit" class="opt-input" spellcheck="false" placeholder="0" />
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <span class="spacer"></span>
+        <span class="pageinfo" id="pageinfo">—</span>
+        <label>Per page</label>
+        <select id="pagesize">
+          <option>10</option><option>25</option><option>50</option><option>100</option>
+        </select>
+        <button id="prev-btn" class="icon-btn" title="Previous">‹</button>
+        <button id="next-btn" class="icon-btn" title="Next">›</button>
+      </div>
+
+      <div id="docs"><div class="empty">No data</div></div>
+    </div>
+  </main>
+
+  <!-- Confirmation modal (used for Delete All + per-doc delete) -->
+  <div id="modal-overlay" class="modal-overlay" style="display:none;">
+    <div class="modal">
+      <div class="modal-title" id="modal-title">Confirm delete</div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="btn">Cancel</button>
+        <button id="modal-confirm" class="btn danger-solid">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const state = {
+  indexes: [],
+  selected: null,      // { index, namespace, dimension }
+  page: 1,
+  pageSize: 10,
+  total: 0,
+  totalCapped: false,
+};
+
+const $ = (s) => document.querySelector(s);
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  const j = await r.json();
+  if (!r.ok || j.status === "error") throw new Error(j.message || "Request failed");
+  return j.data;
+}
+
+/* ---------- Sidebar ---------- */
+async function loadIndexes() {
+  const list = $("#index-list");
+  list.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    state.indexes = await api("/api/indexes");
+    renderIndexes();
+  } catch (e) {
+    list.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderIndexes() {
+  const list = $("#index-list");
+  list.innerHTML = "";
+  if (!state.indexes.length) {
+    list.innerHTML = '<div class="empty">No indexes</div>';
+    return;
+  }
+  state.indexes.forEach((idx) => {
+    const item = document.createElement("div");
+    item.className = "index-item";
+
+    const row = document.createElement("div");
+    row.className = "index-row";
+    row.innerHTML =
+      `<span class="caret">▸</span>` +
+      `<span class="icon">▦</span>` +
+      `<span class="name" title="${escapeHtml(idx.name)}">${escapeHtml(idx.name)}</span>` +
+      `<span class="meta">${idx.total}</span>`;
+    item.appendChild(row);
+
+    const nsWrap = document.createElement("div");
+    nsWrap.style.display = "none";
+
+    const namespaces = idx.namespaces.length
+      ? idx.namespaces
+      : [{ name: "__default__", count: idx.total }];
+
+    namespaces.forEach((ns) => {
+      const nsRow = document.createElement("div");
+      nsRow.className = "ns-row";
+      nsRow.dataset.index = idx.name;
+      nsRow.dataset.ns = ns.name;
+      const label = ns.name === "" || ns.name === "__default__" ? "__default__" : ns.name;
+      nsRow.innerHTML =
+        `<span class="ns-icon">⛁</span><span>${escapeHtml(label)}</span>` +
+        `<span class="count">${ns.count}</span>`;
+      nsRow.addEventListener("click", () => selectNamespace(idx, ns.name, nsRow));
+      nsWrap.appendChild(nsRow);
+    });
+
+    item.appendChild(nsWrap);
+
+    row.addEventListener("click", () => {
+      const open = nsWrap.style.display !== "none";
+      nsWrap.style.display = open ? "none" : "block";
+      row.querySelector(".caret").style.transform = open ? "" : "rotate(90deg)";
+    });
+
+    list.appendChild(item);
+  });
+}
+
+function selectNamespace(idx, nsName, rowEl) {
+  document.querySelectorAll(".ns-row.active").forEach((e) => e.classList.remove("active"));
+  rowEl.classList.add("active");
+  state.selected = { index: idx.name, namespace: nsName, dimension: idx.dimension };
+  state.page = 1;
+  $("#filter").value = "{}";   // default filter {} like Compass
+  $("#welcome").style.display = "none";
+  $("#browser").style.display = "flex";
+  $("#cr-index").textContent = idx.name;
+  $("#cr-ns").textContent = (nsName === "" || nsName === "__default__") ? "__default__" : nsName;
+  runQuery();
+}
+
+/* ---------- Query / Documents ---------- */
+// Lenient object parser so Compass-style { field: 0 } / single quotes work.
+function looseParse(raw) {
+  const s = (raw || "").trim();
+  if (!s) return {};
+  try { return JSON.parse(s); } catch (e) { /* fall through */ }
+  const jsonish = s
+    .replace(/'/g, '"')
+    .replace(/([{,]\s*)([A-Za-z_$][\w$.]*)\s*:/g, '$1"$2":');
+  return JSON.parse(jsonish);
+}
+
+function parseField(sel, label) {
+  const el = $(sel);
+  try {
+    const obj = el.value.trim() ? looseParse(el.value) : {};
+    el.classList.remove("invalid");
+    return obj;
+  } catch (e) {
+    el.classList.add("invalid");
+    throw new Error(`${label} is not valid: ${el.value}`);
+  }
+}
+
+async function runQuery() {
+  if (!state.selected) return;
+  const docs = $("#docs");
+  let filter, project, sort, limit;
+  try {
+    filter = parseField("#filter", "Filter");
+    project = parseField("#project", "Project");
+    sort = parseField("#sort", "Sort");
+    limit = parseInt($("#limit").value.trim(), 10) || 0;
+  } catch (e) {
+    docs.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  docs.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const data = await api("/api/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        index: state.selected.index,
+        namespace: state.selected.namespace,
+        filter,
+        project,
+        sort,
+        limit,
+        page: state.page,
+        pageSize: state.pageSize,
+      }),
+    });
+    state.total = data.total;
+    state.totalCapped = data.totalCapped;
+    renderDocs(data.rows);
+    updatePaging(data);
+  } catch (e) {
+    docs.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderDocs(rows) {
+  const docs = $("#docs");
+  if (!rows.length) {
+    docs.innerHTML = '<div class="empty">No documents match this filter.</div>';
+    return;
+  }
+  docs.innerHTML = "";
+  rows.forEach((r) => {
+    const card = document.createElement("div");
+    card.className = "doc";
+    const obj = { _id: r.id, _score: r.score, metadata: r.metadata };
+
+    const actions = document.createElement("div");
+    actions.className = "doc-actions";
+
+    const copy = document.createElement("button");
+    copy.className = "doc-copy";
+    copy.textContent = "⧉ Copy";
+    copy.title = "Copy document JSON";
+    copy.addEventListener("click", () => {
+      navigator.clipboard.writeText(JSON.stringify(obj, null, 2)).then(() => {
+        copy.textContent = "✓ Copied";
+        setTimeout(() => (copy.textContent = "⧉ Copy"), 1200);
+      });
+    });
+
+    const del = document.createElement("button");
+    del.className = "doc-del";
+    del.textContent = "🗑 Delete";
+    del.addEventListener("click", () => deleteOne(r.id));
+
+    actions.appendChild(copy);
+    actions.appendChild(del);
+
+    const tree = document.createElement("div");
+    tree.className = "jtree";
+    tree.appendChild(jsonNode(obj, 0));
+
+    card.appendChild(actions);
+    card.appendChild(tree);
+    docs.appendChild(card);
+  });
+}
+
+function updatePaging(data) {
+  const from = data.returned === 0 ? 0 : (data.page - 1) * data.pageSize + 1;
+  const to = (data.page - 1) * data.pageSize + data.returned;
+  const totalStr = state.totalCapped ? `${data.total}+` : data.total;
+  $("#pageinfo").textContent = `${from} – ${to} of ${totalStr}`;
+  $("#cr-count").textContent = `${totalStr} docs`;
+  $("#prev-btn").disabled = data.page <= 1;
+  $("#next-btn").disabled = to >= data.total;
+}
+
+/* ---------- Interactive JSON tree (Compass style) ---------- */
+function leafNode(value) {
+  const s = document.createElement("span");
+  if (value === null) { s.className = "k-keyword"; s.textContent = "null"; return s; }
+  if (typeof value === "boolean") { s.className = "k-keyword"; s.textContent = String(value); return s; }
+  if (typeof value === "number") { s.className = "k-number"; s.textContent = String(value); return s; }
+  // string — long strings get a show more / less toggle
+  s.className = "k-string";
+  const str = String(value);
+  if (str.length > 180) {
+    let expanded = false;
+    const text = document.createElement("span");
+    const more = document.createElement("span");
+    more.className = "showmore";
+    const render = () => {
+      text.textContent = '"' + (expanded ? str : str.slice(0, 180) + "…") + '"';
+      more.textContent = expanded ? "  show less" : "  show more";
+    };
+    more.addEventListener("click", () => { expanded = !expanded; render(); });
+    render();
+    s.appendChild(text);
+    s.appendChild(more);
+    return s;
+  }
+  s.textContent = '"' + str + '"';
+  return s;
+}
+
+function jsonNode(value, depth) {
+  const wrap = document.createElement("span");
+  if (value === null || typeof value !== "object") {
+    wrap.appendChild(leafNode(value));
+    return wrap;
+  }
+  const isArr = Array.isArray(value);
+  const keys = isArr ? value.map((_, i) => i) : Object.keys(value);
+  const open = isArr ? "[" : "{";
+  const close = isArr ? "]" : "}";
+  if (!keys.length) { wrap.textContent = open + close; return wrap; }
+
+  const caret = document.createElement("span");
+  caret.className = "caret-j";
+  caret.textContent = "▾";
+
+  const summary = document.createElement("span");
+  summary.className = "jsum";
+  summary.style.display = "none";
+  summary.textContent = (isArr ? `Array(${keys.length})` : `… ${keys.length} fields`);
+
+  const children = document.createElement("div");
+  children.className = "jchildren";
+  keys.forEach((k, i) => {
+    const line = document.createElement("div");
+    line.className = "jline";
+    if (!isArr) {
+      const ks = document.createElement("span");
+      ks.className = depth === 0 ? "k-field" : "k-key";
+      ks.textContent = k;
+      line.appendChild(ks);
+      line.appendChild(document.createTextNode(": "));
+    }
+    line.appendChild(jsonNode(value[k], depth + 1));
+    if (i < keys.length - 1) line.appendChild(document.createTextNode(","));
+    children.appendChild(line);
+  });
+
+  caret.addEventListener("click", () => {
+    const collapsed = children.style.display === "none";
+    children.style.display = collapsed ? "" : "none";
+    summary.style.display = collapsed ? "none" : "inline";
+    caret.textContent = collapsed ? "▾" : "▸";
+  });
+
+  wrap.appendChild(caret);
+  wrap.appendChild(document.createTextNode(" " + open));
+  wrap.appendChild(summary);
+  wrap.appendChild(children);
+  wrap.appendChild(document.createTextNode(close));
+  return wrap;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/* ---------- Delete ---------- */
+let modalConfirmHandler = null;
+
+function showModal(titleHtml, bodyHtml, confirmLabel, onConfirm) {
+  $("#modal-title").innerHTML = titleHtml;
+  $("#modal-body").innerHTML = bodyHtml;
+  $("#modal-confirm").textContent = confirmLabel;
+  $("#modal-confirm").disabled = false;
+  modalConfirmHandler = onConfirm;
+  $("#modal-overlay").style.display = "flex";
+}
+function hideModal() {
+  $("#modal-overlay").style.display = "none";
+  modalConfirmHandler = null;
+}
+
+async function deleteRequest(body) {
+  return api("/api/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      index: state.selected.index,
+      namespace: state.selected.namespace,
+      ...body,
+    }),
+  });
+}
+
+function deleteOne(id) {
+  showModal(
+    "⚠ Delete document",
+    `<div>This will permanently delete the following vector from ` +
+      `<code>${escapeHtml(state.selected.index)}</code>:</div>` +
+      `<pre>${escapeHtml(id)}</pre>` +
+      `<div class="warn">This action cannot be undone.</div>`,
+    "Delete",
+    async () => {
+      $("#modal-confirm").disabled = true;
+      try {
+        await deleteRequest({ ids: [id] });
+        hideModal();
+        await Promise.all([runQuery(), loadIndexes()]);
+      } catch (e) {
+        $("#modal-body").innerHTML += `<div class="warn">${escapeHtml(e.message)}</div>`;
+        $("#modal-confirm").disabled = false;
+      }
+    }
+  );
+}
+
+async function deleteAll() {
+  if (!state.selected) return;
+  let filter;
+  try {
+    filter = parseField("#filter", "Filter");
+  } catch (e) {
+    alert(e.message);
+    return;
+  }
+  const filterStr = JSON.stringify(filter, null, 2);
+  const isWipe = Object.keys(filter).length === 0;
+
+  // Dry run first to show how many documents will be affected.
+  showModal(
+    "⚠ Delete All",
+    '<div class="loading">Calculating how many documents will be affected…</div>',
+    "Delete",
+    null
+  );
+  $("#modal-confirm").disabled = true;
+
+  let preview;
+  try {
+    preview = await deleteRequest({ filter, dryRun: true });
+  } catch (e) {
+    $("#modal-body").innerHTML = `<div class="warn">${escapeHtml(e.message)}</div>`;
+    return;
+  }
+
+  const capNote = preview.capped
+    ? `<div class="warn">Note: only the first ${preview.affected} matching documents ` +
+      `will be deleted in this pass (Pinecone caps a single operation). ` +
+      `Run Delete All again to remove the rest.</div>`
+    : "";
+
+  const scope = isWipe
+    ? `<b>EVERY</b> document in namespace <code>${escapeHtml($("#cr-ns").textContent)}</code> ` +
+      `of index <code>${escapeHtml(state.selected.index)}</code>`
+    : `all documents matching the filter below in index <code>${escapeHtml(state.selected.index)}</code>`;
+
+  showModal(
+    "⚠ Delete All",
+    `<div>You are about to permanently delete ${scope}.</div>` +
+      `<div style="margin-top:12px;">Filter applied:</div>` +
+      `<pre>${escapeHtml(filterStr)}</pre>` +
+      `<div style="margin-top:14px;">Documents that will be deleted: ` +
+      `<span class="count">${preview.affected}</span></div>` +
+      capNote +
+      `<div class="warn">This action cannot be undone.</div>`,
+    `Delete ${preview.affected}`,
+    async () => {
+      $("#modal-confirm").disabled = true;
+      try {
+        const res = await deleteRequest({ filter });
+        hideModal();
+        await Promise.all([runQuery(), loadIndexes()]);
+        alert(`Deleted ${res.affected} document(s).`);
+      } catch (e) {
+        $("#modal-body").innerHTML += `<div class="warn">${escapeHtml(e.message)}</div>`;
+        $("#modal-confirm").disabled = false;
+      }
+    }
+  );
+  if (preview.affected === 0) $("#modal-confirm").disabled = true;
+}
+
+/* ---------- Export ---------- */
+async function exportData() {
+  if (!state.selected) return;
+  let filter, project, sort, limit;
+  try {
+    filter = parseField("#filter", "Filter");
+    project = parseField("#project", "Project");
+    sort = parseField("#sort", "Sort");
+    limit = parseInt($("#limit").value.trim(), 10) || 0;
+  } catch (e) { alert(e.message); return; }
+
+  const btn = $("#export-btn");
+  const orig = btn.textContent;
+  btn.textContent = "⬇ Exporting…";
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        index: state.selected.index,
+        namespace: state.selected.namespace,
+        filter, project, sort, limit,
+      }),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.message || "Export failed");
+    }
+    const blob = await r.blob();
+    const disp = r.headers.get("Content-Disposition") || "";
+    const m = disp.match(/filename="([^"]+)"/);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = m ? m[1] : "pinecone-export.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    btn.textContent = orig;
+    btn.disabled = false;
+  }
+}
+
+/* ---------- Events ---------- */
+$("#export-btn").addEventListener("click", exportData);
+$("#delete-all-btn").addEventListener("click", deleteAll);
+$("#modal-cancel").addEventListener("click", hideModal);
+$("#modal-confirm").addEventListener("click", () => {
+  if (modalConfirmHandler) modalConfirmHandler();
+});
+$("#modal-overlay").addEventListener("click", (e) => {
+  if (e.target === $("#modal-overlay")) hideModal();
+});
+$("#refresh-btn").addEventListener("click", loadIndexes);
+$("#find-btn").addEventListener("click", () => { state.page = 1; runQuery(); });
+$("#reset-btn").addEventListener("click", () => {
+  $("#filter").value = "{}";
+  ["#filter", "#project", "#sort", "#limit"].forEach((s) => {
+    if (s !== "#filter") $(s).value = "";
+    $(s).classList.remove("invalid");
+  });
+  state.page = 1; runQuery();
+});
+$("#options-btn").addEventListener("click", () => {
+  const opts = $("#options");
+  const open = opts.style.display !== "none";
+  opts.style.display = open ? "none" : "block";
+  $("#options-btn").textContent = open ? "Options ▸" : "Options ▾";
+});
+["#filter", "#project", "#sort", "#limit"].forEach((sel) => {
+  $(sel).addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { state.page = 1; runQuery(); }
+  });
+});
+$("#pagesize").addEventListener("change", (e) => {
+  state.pageSize = parseInt(e.target.value, 10);
+  state.page = 1; runQuery();
+});
+$("#prev-btn").addEventListener("click", () => {
+  if (state.page > 1) { state.page--; runQuery(); }
+});
+$("#next-btn").addEventListener("click", () => { state.page++; runQuery(); });
+
+loadIndexes();
+</script>
+</body>
+</html>
