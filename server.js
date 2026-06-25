@@ -66,6 +66,57 @@ function applyProject(metadata, project) {
 
 const app = express();
 
+// Running behind Render/other proxies: trust X-Forwarded-* so we see real IPs.
+app.set("trust proxy", true);
+
+// ---- IP allowlist ----------------------------------------------------------
+// Set ALLOWED_IPS to a comma-separated list of IPs / IPv4 CIDR ranges to only
+// allow requests from those addresses (e.g. "203.0.113.4, 10.0.0.0/24").
+// Leave it empty to allow all IPs.
+const ALLOWED_IPS = (process.env.ALLOWED_IPS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+function clientIp(req) {
+    const xff = req.headers["x-forwarded-for"];
+    let ip = xff ? String(xff).split(",")[0].trim() : req.socket.remoteAddress;
+    if (ip && ip.startsWith("::ffff:")) ip = ip.slice(7); // IPv4-mapped IPv6
+    return ip || "";
+}
+
+function ipv4ToInt(ip) {
+    const p = ip.split(".");
+    if (p.length !== 4) return null;
+    return p.reduce((acc, o) => (acc << 8) + (parseInt(o, 10) & 255), 0) >>> 0;
+}
+
+function ipMatches(ip, rule) {
+    if (rule.includes("/")) {
+        // IPv4 CIDR
+        const [range, bitsStr] = rule.split("/");
+        const bits = parseInt(bitsStr, 10);
+        const ipInt = ipv4ToInt(ip);
+        const rangeInt = ipv4ToInt(range);
+        if (ipInt === null || rangeInt === null) return false;
+        const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+        return (ipInt & mask) === (rangeInt & mask);
+    }
+    return ip === rule;
+}
+
+if (ALLOWED_IPS.length) {
+    app.use((req, res, next) => {
+        const ip = clientIp(req);
+        if (ALLOWED_IPS.some((rule) => ipMatches(ip, rule))) return next();
+        // eslint-disable-next-line no-console
+        console.warn(`Blocked request from non-allowlisted IP: ${ip}`);
+        return res.status(403).send("Forbidden: your IP is not allowed.");
+    });
+    // eslint-disable-next-line no-console
+    console.log(`IP allowlist active: ${ALLOWED_IPS.join(", ")}`);
+}
+
 // HTTP Basic Auth gate. Enabled whenever APP_PASSWORD is set (always set it in
 // production). Username defaults to "admin" if APP_USER is not provided.
 const AUTH_USER = process.env.APP_USER || "admin";

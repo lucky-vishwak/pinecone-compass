@@ -18,3 +18,7 @@ services:
         value: us-east-1
       - key: APP_USER
         value: admin
+      # Optional IP allowlist: comma-separated IPs / IPv4 CIDR ranges.
+      # Leave unset/blank to allow all IPs.
+      - key: ALLOWED_IPS
+        sync: false
