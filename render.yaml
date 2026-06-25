@@ -18,7 +18,7 @@ services:
         value: us-east-1
       - key: APP_USER
         value: admin
-      # Optional IP allowlist: comma-separated IPs / IPv4 CIDR ranges.
-      # Leave unset/blank to allow all IPs.
+      # IP allowlist: comma-separated IPs / IPv4 CIDR ranges. Only these IPs
+      # can reach the app. Update in the Render dashboard if your IP changes.
       - key: ALLOWED_IPS
-        sync: false
+        value: 208.127.30.50
