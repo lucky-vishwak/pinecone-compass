@@ -83,12 +83,41 @@
     display: flex; align-items: center; gap: 10px;
   }
   .filterbar label { font-weight: 700; color: var(--muted); }
+  .filter-wrap { flex: 1; position: relative; }
   .filter-input {
-    flex: 1; font-family: "SF Mono", Menlo, Consolas, monospace;
+    width: 100%; font-family: "SF Mono", Menlo, Consolas, monospace;
     padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
     font-size: 13px; background: #fbfbfc;
   }
   .filter-input.invalid { border-color: var(--field); background: #fff5f4; }
+
+  /* Query history dropdown (Compass-style) */
+  .history-dropdown {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.16); max-height: 320px; overflow-y: auto;
+  }
+  .history-head {
+    padding: 7px 12px; font-size: 11px; font-weight: 700; letter-spacing: .4px;
+    text-transform: uppercase; color: var(--muted);
+    border-bottom: 1px solid var(--border); display: flex; justify-content: space-between;
+  }
+  .history-clear { cursor: pointer; color: var(--field); text-transform: none; font-weight: 600; }
+  .history-clear:hover { text-decoration: underline; }
+  .history-item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+    cursor: pointer; border-bottom: 1px solid #f0f1f2;
+  }
+  .history-item:last-child { border-bottom: none; }
+  .history-item:hover, .history-item.active { background: #f0f7f4; }
+  .history-item .clock { color: var(--muted); flex: none; }
+  .history-item .q {
+    flex: 1; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px;
+    color: var(--field); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .history-item .q .sort-part { color: var(--number); }
+  .history-item .ago { color: var(--muted); font-size: 11px; flex: none; }
+  .history-empty { padding: 14px 12px; color: var(--muted); text-align: center; }
   .btn {
     border: 1px solid var(--border); background: #fff; border-radius: 6px;
     padding: 8px 14px; cursor: pointer; font-weight: 600; font-size: 13px;
@@ -231,7 +260,10 @@
 
       <div class="filterbar">
         <label>Filter</label>
-        <input id="filter" class="filter-input" spellcheck="false" value="{}" placeholder='{ "tenantId": "322" }' />
+        <div class="filter-wrap">
+          <input id="filter" class="filter-input" spellcheck="false" autocomplete="off" value="{}" placeholder='{ "tenantId": "322" }' />
+          <div id="history" class="history-dropdown" style="display:none;"></div>
+        </div>
         <button id="reset-btn" class="btn">Reset</button>
         <button id="find-btn" class="btn primary">Find</button>
         <button id="options-btn" class="btn">Options ▸</button>
@@ -375,6 +407,111 @@ function selectNamespace(idx, nsName, rowEl) {
   $("#browser").style.display = "flex";
   $("#cr-index").textContent = idx.name;
   $("#cr-ns").textContent = (nsName === "" || nsName === "__default__") ? "__default__" : nsName;
+  runQuery();
+}
+
+/* ---------- Query history (Compass-style) ---------- */
+const HISTORY_MAX = 25;
+
+function historyKey() {
+  if (!state.selected) return null;
+  return `pc_history::${state.selected.index}::${state.selected.namespace}`;
+}
+function loadHistory() {
+  const key = historyKey();
+  if (!key) return [];
+  try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch (e) { return []; }
+}
+function saveHistory(list) {
+  const key = historyKey();
+  if (key) localStorage.setItem(key, JSON.stringify(list.slice(0, HISTORY_MAX)));
+}
+function addToHistory(entry) {
+  const list = loadHistory();
+  const sig = JSON.stringify([entry.filter, entry.sort, entry.project, entry.limit]);
+  const filtered = list.filter(
+    (e) => JSON.stringify([e.filter, e.sort, e.project, e.limit]) !== sig
+  );
+  filtered.unshift({ ...entry, ts: Date.now() });
+  saveHistory(filtered);
+}
+function relativeTime(ts) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} minute${m > 1 ? "s" : ""} ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} hour${h > 1 ? "s" : ""} ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d} day${d > 1 ? "s" : ""} ago`;
+  return new Date(ts).toLocaleDateString();
+}
+function historyLabel(e) {
+  let html = `<span>${escapeHtml(e.filter || "{}")}</span>`;
+  if (e.sort && e.sort.trim() && e.sort.trim() !== "{}")
+    html += `<span class="sort-part">, sort: ${escapeHtml(e.sort)}</span>`;
+  return html;
+}
+function showHistory() {
+  const box = $("#history");
+  const list = loadHistory();
+  if (!list.length) { box.style.display = "none"; return; }
+  let html = `<div class="history-head"><span>Recent Queries</span>` +
+    `<span class="history-clear" id="hist-clear">Clear</span></div>`;
+  list.forEach((e, i) => {
+    html += `<div class="history-item" data-i="${i}">` +
+      `<span class="clock">🕘</span>` +
+      `<span class="q">${historyLabel(e)}</span>` +
+      `<span class="ago">${relativeTime(e.ts)}</span></div>`;
+  });
+  box.innerHTML = html;
+  box.style.display = "block";
+  box.querySelectorAll(".history-item").forEach((el) => {
+    el.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      applyHistory(list[+el.dataset.i]);
+    });
+  });
+  $("#hist-clear").addEventListener("mousedown", (ev) => {
+    ev.preventDefault();
+    saveHistory([]);
+    hideHistory();
+  });
+}
+function hideHistory() { $("#history").style.display = "none"; }
+
+function applyHistory(e) {
+  $("#filter").value = e.filter || "{}";
+  $("#project").value = e.project || "";
+  $("#sort").value = e.sort || "";
+  $("#limit").value = e.limit || "";
+  if ((e.project && e.project !== "") || (e.sort && e.sort !== "") || (e.limit && e.limit !== "")) {
+    $("#options").style.display = "block";
+    $("#options-btn").textContent = "Options ▾";
+  }
+  hideHistory();
+  submitQuery();
+}
+
+// Validate + persist the current query to history, then run it.
+function submitQuery() {
+  if (!state.selected) return;
+  try {
+    parseField("#filter", "Filter");
+    parseField("#project", "Project");
+    parseField("#sort", "Sort");
+  } catch (e) {
+    state.page = 1; runQuery(); // runQuery surfaces the parse error
+    return;
+  }
+  addToHistory({
+    filter: $("#filter").value.trim() || "{}",
+    project: $("#project").value.trim(),
+    sort: $("#sort").value.trim(),
+    limit: $("#limit").value.trim(),
+  });
+  hideHistory();
+  state.page = 1;
   runQuery();
 }
 
@@ -756,7 +893,7 @@ $("#modal-overlay").addEventListener("click", (e) => {
   if (e.target === $("#modal-overlay")) hideModal();
 });
 $("#refresh-btn").addEventListener("click", loadIndexes);
-$("#find-btn").addEventListener("click", () => { state.page = 1; runQuery(); });
+$("#find-btn").addEventListener("click", submitQuery);
 $("#reset-btn").addEventListener("click", () => {
   $("#filter").value = "{}";
   ["#filter", "#project", "#sort", "#limit"].forEach((s) => {
@@ -764,6 +901,14 @@ $("#reset-btn").addEventListener("click", () => {
     $(s).classList.remove("invalid");
   });
   state.page = 1; runQuery();
+});
+
+// Query history dropdown behaviour on the filter box.
+$("#filter").addEventListener("focus", showHistory);
+$("#filter").addEventListener("click", showHistory);
+$("#filter").addEventListener("blur", () => setTimeout(hideHistory, 150));
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".filter-wrap")) hideHistory();
 });
 $("#options-btn").addEventListener("click", () => {
   const opts = $("#options");
@@ -773,7 +918,8 @@ $("#options-btn").addEventListener("click", () => {
 });
 ["#filter", "#project", "#sort", "#limit"].forEach((sel) => {
   $(sel).addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { state.page = 1; runQuery(); }
+    if (e.key === "Enter") submitQuery();
+    else if (e.key === "Escape") hideHistory();
   });
 });
 $("#pagesize").addEventListener("change", (e) => {
